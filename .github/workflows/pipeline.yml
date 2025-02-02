@@ -3,12 +3,12 @@ name: "Stratum CI Pipeline"
 on:
   push:
     branches:
+      - ffoulkes
       - split-arch
   pull_request:
     branches:
-      - mev-ts*
+      - ffoulkes
       - split-arch
-      - stratum-updates
 
   workflow_dispatch:
 

@@ -3,12 +3,12 @@ name: "clang-format check"
 on:
   push:
     branches:
+      - ffoulkes
       - split-arch
   pull_request:
     branches:
-      - mev-ts*
+      - ffoulkes
       - split-arch
-      - stratum-updates
 
 concurrency:
   # If workflow for PR or push is already running, stop it and start a new one.
