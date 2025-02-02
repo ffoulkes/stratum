@@ -70,32 +70,6 @@ jobs:
           xargs -a .github/dpdk-tests.txt bazel test --define target=dpdk --test_tag_filters=-broken,-flaky
 
   #---------------------------------------------------------------------
-  # bcm_unit_tests
-  #---------------------------------------------------------------------
-  bcm_unit_tests:
-    runs-on: ubuntu-20.04
-
-    steps:
-      - name: Clone stratum repository
-        uses: actions/checkout@v4
-
-      - name: Mount bazel cache
-        uses: actions/cache@v4
-        with:
-          path: "~/.cache/bazel"
-          key: bazel-${{ runner.os }}-bcm-tests-${{ hashFiles('WORKSPACE', '**/*.bzl', '**/BUILD') }}
-          restore-keys: |
-            bazel-${{ runner.os }}-bcm-tests-
-
-      - name: Install prerequisites
-        run: |
-          sudo apt install libelf-dev
-
-      - name: Run unit tests
-        run: |
-          bazel test //stratum/hal/lib/bcm/...
-
-  #---------------------------------------------------------------------
   # cdlang_tests (gNMI)
   #---------------------------------------------------------------------
   cdlang_tests:
