@@ -1,4 +1,4 @@
-# Stratum
+# ffoulkes/stratum
 
 > See [README.stratum.md](README.stratum.md) for the original README file.
 
