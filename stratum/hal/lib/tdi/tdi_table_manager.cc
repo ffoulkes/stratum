@@ -247,24 +247,27 @@ std::unique_ptr<TdiTableManager> TdiTableManager::CreateInstance(
   for (const auto& resource_id : table.direct_resource_ids()) {
     ASSIGN_OR_RETURN(auto resource_type,
                      p4_info_manager_->FindResourceTypeByID(resource_id));
-    if (resource_type == "Direct-Meter" && table_entry.has_meter_config()) {
-      bool units_in_packets;  // or bytes
-      ASSIGN_OR_RETURN(auto meter,
-                       p4_info_manager_->FindDirectMeterByID(resource_id));
-      RETURN_IF_ERROR(GetMeterUnitsInPackets(meter, units_in_packets));
 
-      RETURN_IF_ERROR(table_data->SetMeterConfig(
-          units_in_packets, table_entry.meter_config().cir(),
-          table_entry.meter_config().cburst(), table_entry.meter_config().pir(),
-          table_entry.meter_config().pburst()));
-    }
-    if (resource_type == "Direct-Counter" && table_entry.has_counter_data()) {
-      RETURN_IF_ERROR(table_data->SetCounterData(
-          table_entry.counter_data().byte_count(),
-          table_entry.counter_data().packet_count()));
-    }
+    if (resource_type == "Direct-Meter") {
+      if (table_entry.has_meter_config()) {
+        bool units_in_packets;  // or bytes
+        ASSIGN_OR_RETURN(auto meter,
+                         p4_info_manager_->FindDirectMeterByID(resource_id));
+        RETURN_IF_ERROR(GetMeterUnitsInPackets(meter, units_in_packets));
 
-    else if (resource_type == "DirectPacketModMeter") {
+        RETURN_IF_ERROR(table_data->SetMeterConfig(
+            units_in_packets, table_entry.meter_config().cir(),
+            table_entry.meter_config().cburst(),
+            table_entry.meter_config().pir(),
+            table_entry.meter_config().pburst()));
+      }
+    } else if (resource_type == "Direct-Counter") {
+      if (table_entry.has_counter_data()) {
+        RETURN_IF_ERROR(table_data->SetCounterData(
+            table_entry.counter_data().byte_count(),
+            table_entry.counter_data().packet_count()));
+      }
+    } else if (resource_type == "DirectPacketModMeter") {
       RETURN_IF_ERROR(tdi_table_annex_->BuildDirPktModTableData(
           table_entry, table_data, resource_id));
     }
@@ -464,33 +467,37 @@ std::unique_ptr<TdiTableManager> TdiTableManager::CreateInstance(
   for (const auto& resource_id : table.direct_resource_ids()) {
     ASSIGN_OR_RETURN(auto resource_type,
                      p4_info_manager_->FindResourceTypeByID(resource_id));
-    if (resource_type == "Direct-Meter" && request.has_meter_config()) {
-      ASSIGN_OR_RETURN(auto meter,
-                       p4_info_manager_->FindDirectMeterByID(resource_id));
-      {
-        // GetMeterUnitsInPackets() returns error status if the meter units
-        // are neither PACKETS nor BYTES. This code appears to be using the
-        // function to validate the meter configuration.
-        bool units_in_packets;
-        RETURN_IF_ERROR(GetMeterUnitsInPackets(meter, units_in_packets));
+
+    if (resource_type == "Direct-Meter") {
+      if (request.has_meter_config()) {
+        ASSIGN_OR_RETURN(auto meter,
+                         p4_info_manager_->FindDirectMeterByID(resource_id));
+        {
+          // GetMeterUnitsInPackets() returns error status if the meter units
+          // are neither PACKETS nor BYTES. This code appears to be using the
+          // function to validate the meter configuration.
+          bool units_in_packets;
+          RETURN_IF_ERROR(GetMeterUnitsInPackets(meter, units_in_packets));
+        }
+        uint64 cir = 0;
+        uint64 cburst = 0;
+        uint64 pir = 0;
+        uint64 pburst = 0;
+        RETURN_IF_ERROR(
+            table_data->GetMeterConfig(false, &cir, &cburst, &pir, &pburst));
+        result.mutable_meter_config()->set_cir(static_cast<int64>(cir));
+        result.mutable_meter_config()->set_cburst(static_cast<int64>(cburst));
+        result.mutable_meter_config()->set_pir(static_cast<int64>(pir));
+        result.mutable_meter_config()->set_pburst(static_cast<int64>(pburst));
       }
-      uint64 cir = 0;
-      uint64 cburst = 0;
-      uint64 pir = 0;
-      uint64 pburst = 0;
-      RETURN_IF_ERROR(
-          table_data->GetMeterConfig(false, &cir, &cburst, &pir, &pburst));
-      result.mutable_meter_config()->set_cir(static_cast<int64>(cir));
-      result.mutable_meter_config()->set_cburst(static_cast<int64>(cburst));
-      result.mutable_meter_config()->set_pir(static_cast<int64>(pir));
-      result.mutable_meter_config()->set_pburst(static_cast<int64>(pburst));
-    }
-    if (resource_type == "Direct-Counter" && request.has_counter_data()) {
-      uint64 bytes = 0;
-      uint64 packets = 0;
-      RETURN_IF_ERROR(table_data->GetCounterData(&bytes, &packets));
-      result.mutable_counter_data()->set_byte_count(bytes);
-      result.mutable_counter_data()->set_packet_count(packets);
+    } else if (resource_type == "Direct-Counter") {
+      if (request.has_counter_data()) {
+        uint64 bytes = 0;
+        uint64 packets = 0;
+        RETURN_IF_ERROR(table_data->GetCounterData(&bytes, &packets));
+        result.mutable_counter_data()->set_byte_count(bytes);
+        result.mutable_counter_data()->set_packet_count(packets);
+      }
     }
   }
 
@@ -761,6 +768,7 @@ std::unique_ptr<TdiTableManager> TdiTableManager::CreateInstance(
   for (const auto& resource_id : table.direct_resource_ids()) {
     ASSIGN_OR_RETURN(auto resource_type,
                      p4_info_manager_->FindResourceTypeByID(resource_id));
+
     if (resource_type == "Direct-Meter") {
       bool units_in_packets;  // or bytes
       ASSIGN_OR_RETURN(auto meter,
@@ -857,20 +865,22 @@ TdiTableManager::ReadDirectMeterEntry(
   for (const auto& resource_id : table.direct_resource_ids()) {
     ASSIGN_OR_RETURN(auto resource_type,
                      p4_info_manager_->FindResourceTypeByID(resource_id));
-    if (resource_type == "Direct-Meter" && table_entry.has_meter_config()) {
-      // build response entry from returned data
-      uint64 cir = 0;
-      uint64 cburst = 0;
-      uint64 pir = 0;
-      uint64 pburst = 0;
-      RETURN_IF_ERROR(
-          table_data->GetMeterConfig(false, &cir, &cburst, &pir, &pburst));
-      result.mutable_config()->set_cir(static_cast<int64>(cir));
-      result.mutable_config()->set_cburst(static_cast<int64>(cburst));
-      result.mutable_config()->set_pir(static_cast<int64>(pir));
-      result.mutable_config()->set_pburst(static_cast<int64>(pburst));
-    }
-    if (resource_type == "DirectPacketModMeter") {
+
+    if (resource_type == "Direct-Meter") {
+      if (table_entry.has_meter_config()) {
+        // build response entry from returned data
+        uint64 cir = 0;
+        uint64 cburst = 0;
+        uint64 pir = 0;
+        uint64 pburst = 0;
+        RETURN_IF_ERROR(
+            table_data->GetMeterConfig(false, &cir, &cburst, &pir, &pburst));
+        result.mutable_config()->set_cir(static_cast<int64>(cir));
+        result.mutable_config()->set_cburst(static_cast<int64>(cburst));
+        result.mutable_config()->set_pir(static_cast<int64>(pir));
+        result.mutable_config()->set_pburst(static_cast<int64>(pburst));
+      }
+    } else if (resource_type == "DirectPacketModMeter") {
       RETURN_IF_ERROR(
           tdi_table_annex_->ReadDirPktModMeterEntry(table_data.get(), result));
     }
@@ -1014,9 +1024,7 @@ TdiTableManager::ReadDirectMeterEntry(
     if (!writer->Write(resp)) {
       return MAKE_ERROR(ERR_INTERNAL) << "Write to stream for failed.";
     }
-  }
-
-  else if (resource_type == "PacketModMeter") {
+  } else if (resource_type == "PacketModMeter") {
     RETURN_IF_ERROR(tdi_table_annex_->ReadPktModMeterEntry(session, meter_entry,
                                                            writer, table_id));
   }
@@ -1042,29 +1050,29 @@ TdiTableManager::ReadDirectMeterEntry(
   ASSIGN_OR_RETURN(auto resource_type, p4_info_manager_->FindResourceTypeByID(
                                            meter_entry.meter_id()));
 
-  if (resource_type == "Meter" && meter_entry.has_config()) {
-    bool units_in_packets;  // or bytes
-    {
-      absl::ReaderMutexLock l(&lock_);
-      ASSIGN_OR_RETURN(auto meter,
-                       p4_info_manager_->FindMeterByID(meter_entry.meter_id()));
-      RETURN_IF_ERROR(GetMeterUnitsInPackets(meter, units_in_packets));
+  if (resource_type == "Meter") {
+    if (meter_entry.has_config()) {
+      bool units_in_packets;  // or bytes
+      {
+        absl::ReaderMutexLock l(&lock_);
+        ASSIGN_OR_RETURN(auto meter, p4_info_manager_->FindMeterByID(
+                                         meter_entry.meter_id()));
+        RETURN_IF_ERROR(GetMeterUnitsInPackets(meter, units_in_packets));
+      }
+
+      absl::optional<uint32> meter_index;
+      if (meter_entry.has_index()) {
+        meter_index = meter_entry.index().index();
+      } else {
+        return MAKE_ERROR(ERR_INVALID_PARAM) << "Invalid meter entry index";
+      }
+
+      RETURN_IF_ERROR(tdi_sde_interface_->WriteIndirectMeter(
+          device_, session, meter_rt_id, meter_index, units_in_packets,
+          meter_entry.config().cir(), meter_entry.config().cburst(),
+          meter_entry.config().pir(), meter_entry.config().pburst()));
     }
-
-    absl::optional<uint32> meter_index;
-    if (meter_entry.has_index()) {
-      meter_index = meter_entry.index().index();
-    } else {
-      return MAKE_ERROR(ERR_INVALID_PARAM) << "Invalid meter entry index";
-    }
-
-    RETURN_IF_ERROR(tdi_sde_interface_->WriteIndirectMeter(
-        device_, session, meter_rt_id, meter_index, units_in_packets,
-        meter_entry.config().cir(), meter_entry.config().cburst(),
-        meter_entry.config().pir(), meter_entry.config().pburst()));
-  }
-
-  if (resource_type == "PacketModMeter") {
+  } else if (resource_type == "PacketModMeter") {
     RETURN_IF_ERROR(tdi_table_annex_->WritePktModMeterEntry(
         session, type, meter_entry, meter_rt_id));
   }
